@@ -93,14 +93,13 @@ class Perceptron(BaseEstimator):
         """
         if self.include_intercept_:
             X = np.hstack((np.ones((X.shape[0], 1)), X))
-        counter = 0
         self.coefs_ = np.zeros(X.shape[1])
         self.fitted_ = True
         iter = 0
         while iter < self.max_iter_:
             mistakes = (np.sign(np.matmul(X, self.coefs_)) - y) != 0
-            mistakes_exists = np.any((mistakes != np.zeros(y.size)))
-            if mistakes_exists:
+            any_mistakes = np.any((mistakes != np.zeros(y.size)))
+            if any_mistakes:
                 i = np.argmax(mistakes)
                 self.coefs_ += (y[i] * X[i])
                 self.callback_(self, X, y)

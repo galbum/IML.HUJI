@@ -55,7 +55,6 @@ class LinearRegression(BaseEstimator):
             a = np.ones((X.shape[0], X.shape[1] + 1))
             a[:, 1:] = X
             X = a
-
         self.coefs_ = np.matmul(pinv(X), y)
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
@@ -75,7 +74,6 @@ class LinearRegression(BaseEstimator):
         a = np.ones((X.shape[0], X.shape[1] + 1))
         a[:, 1:] = X
         X = a
-
         return np.matmul(X, self.coefs_)
 
     def _loss(self, X: np.ndarray, y: np.ndarray) -> float:

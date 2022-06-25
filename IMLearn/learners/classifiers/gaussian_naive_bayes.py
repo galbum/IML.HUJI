@@ -1,7 +1,6 @@
 from typing import NoReturn
 from ...base import BaseEstimator
 import numpy as np
-
 from ...metrics import misclassification_error
 
 
@@ -37,28 +36,33 @@ class GaussianNaiveBayes(BaseEstimator):
         y : ndarray of shape (n_samples, )
             Responses of input data to fit to
         """
-        # calculate classes
-        y_mean_classified_as_two = np.mean(y == 2)
-        y_mean_classified_as_one = np.mean(y == 1)
-        y_mean_classified_as_zero = np.mean(y == 0)
-        self.classes_ = np.array([y_mean_classified_as_zero, y_mean_classified_as_one, y_mean_classified_as_two])
-        # calculate mu
-        x_mean_classified_as_two = np.mean(X[y == 2], axis=0)
-        x_mean_classified_as_one = np.mean(X[y == 1], axis=0)
-        x_mean_classified_as_zero = np.mean(X[y == 0], axis=0)
-        self.mu_ = np.transpose(np.array([x_mean_classified_as_zero, x_mean_classified_as_one, x_mean_classified_as_two]))
-        # calculate vars matrix
-        xi_twos_minus_mu = X[y == 2] - self.mu_[:, 2]
-        xi_ones_minus_mu = X[y == 1] - self.mu_[:, 1]
-        xi_zeros_minus_mu = X[y == 0] - self.mu_[:, 0]
-        self.vars_ = np.matmul(np.transpose(xi_twos_minus_mu), xi_twos_minus_mu)
-        self.vars_ += np.matmul(np.transpose(xi_ones_minus_mu), xi_ones_minus_mu)
-        self.vars_ += np.matmul(np.transpose(xi_zeros_minus_mu), xi_zeros_minus_mu)
-        self.vars_ /= y.size  # using the unbiased estimator
-        # calculate vars inverse matrix
-        self._vars_inv = np.linalg.inv(self.vars_)
-        # calculate pi
-        self.pi_ = -0.5 * np.diag(np.matmul(np.matmul(np.transpose(self.mu_), self._vars_inv), self.mu_))
+        # Classes
+        self.classes_ = np.unique(y)
+        # mu - same as LDA
+        arr = []
+        x_column_shape = X.shape[1]
+        for i, j in enumerate(self.classes_):
+            arr.append(np.mean(X[y == i], axis=0))
+        self.mu_ = np.array(arr)
+        # vars - different from LDA
+        self.vars_ = [[[] for i in range(x_column_shape)] for j in range(self.classes_.size)]
+        # iterate through [x value, y corresponding value, the current class]
+        for sample in np.r_['-1,2,0', X, y]:
+            row = int(sample[-1])
+            # iterate through each x value and add the y corresponding value to the vars array
+            for x_val, y_corresponding_val in enumerate(sample[:-1]):
+                self.vars_[row][x_val].append(y_corresponding_val)
+        # iterate through rows
+        for row in range(self.classes_.size):
+            # iterate through columns and calculate variance
+            for column in range(X.shape[1]):
+                self.vars_[row][column] = np.var(np.array(self.vars_[row][column]))
+        self.vars_ = np.array(self.vars_)
+        # pi
+        mean = []
+        for i, j in enumerate(self.classes_):
+            mean.append(np.mean(y == i))
+        self.pi_ = np.array(mean)
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         """
@@ -72,9 +76,23 @@ class GaussianNaiveBayes(BaseEstimator):
         responses : ndarray of shape (n_samples, )
             Predicted responses of given samples
         """
-        ak = np.matmul(self._vars_inv, self.mu_)
-        bk = self.classes_ + self.pi_
-        return np.argmax(np.matmul(X, ak) + bk, axis=1)
+        # array of predictions
+        prediction = np.ndarray(X.shape[0])
+        # go through all of X
+        for i, x in enumerate(X):
+            arr = np.ndarray(self.classes_.size)
+            # iterate through the amount of possible answers
+            for j in range(self.classes_.size):
+                log_pi = np.log(self.pi_[j])
+                summ = 0
+                # iterate through X columns
+                for k in range(X.shape[1]):
+                    log_two_pi_vars = np.log(2 * np.pi * self.vars_[j][k])
+                    x_minus_mu_squared = (x[k] - self.mu_[j][k]) ** 2
+                    summ += sum([log_two_pi_vars + x_minus_mu_squared / self.vars_[j][k]])
+                arr[j] = log_pi - 0.5 * summ
+            prediction[i] = self.classes_[np.argmax(arr)]
+        return prediction
 
     def likelihood(self, X: np.ndarray) -> np.ndarray:
         """
@@ -87,15 +105,22 @@ class GaussianNaiveBayes(BaseEstimator):
         -------
         likelihoods : np.ndarray of shape (n_samples, n_classes)
             The likelihood for each sample under each of the classes
-
         """
-        return np.exp(self.log_likelihood(self, X))
+        if not self.fitted_:
+            raise ValueError("Estimator must first be fitted before calling `likelihood` function")
 
-    def log_likelihood(self, X: np.ndarray) -> np.ndarray:
-        d_half_log_two_pi = -0.5 * X.size * np.log(2 * np.pi)
-        log_cov = -0.5 * np.log(self.vars_)
-        X_minus_mu_inv_cov = -0.5 * np.matmul(np.matmul(X - self.mu_, self._vars_inv), X - self.mu_)
-        return np.log(self.classes_) + d_half_log_two_pi + log_cov + X_minus_mu_inv_cov
+        likelihoods = np.ndarray((X.shape[0], self.classes_.size))
+        # iterate through X
+        for i, x in enumerate(X):
+            # iterate through the amount of possible answers
+            for classes in range(self.classes_.size):
+                pdf = 1
+                # iterate through X columns
+                for column in range(X.shape[1]):
+                    pdf *= (1 / np.sqrt(2 * np.pi * self.vars_[classes][column])) * np.exp(
+                        -0.5 * ((x[column] - self.mu_[classes][column]) ** 2) / self.vars_[classes][column])
+                likelihoods[i][classes] = self.pi_[classes] * pdf
+        return likelihoods
 
     def _loss(self, X: np.ndarray, y: np.ndarray) -> float:
         """
@@ -111,4 +136,4 @@ class GaussianNaiveBayes(BaseEstimator):
         loss : float
             Performance under missclassification loss function
         """
-        return misclassification_error(y, self.predict(X))
+        return misclassification_error(y, self._predict(X))

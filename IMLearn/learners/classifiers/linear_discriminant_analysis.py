@@ -43,27 +43,29 @@ class LDA(BaseEstimator):
             Responses of input data to fit to
         """
         # calculate classes
-        y_mean_classified_as_two = np.mean(y == 2)
-        y_mean_classified_as_one = np.mean(y == 1)
-        y_mean_classified_as_zero = np.mean(y == 0)
-        self.classes_ = np.array([y_mean_classified_as_zero, y_mean_classified_as_one, y_mean_classified_as_two])
+        self.classes_ = np.unique(y)
         # calculate mu
-        x_mean_classified_as_two = np.mean(X[y == 2], axis=0)
-        x_mean_classified_as_one = np.mean(X[y == 1], axis=0)
-        x_mean_classified_as_zero = np.mean(X[y == 0], axis=0)
-        self.mu_ = np.transpose(np.array([x_mean_classified_as_zero, x_mean_classified_as_one, x_mean_classified_as_two]))
+        arr = []
+        for i, j in enumerate(self.classes_):
+            arr.append(np.mean(X[y == i], axis=0))
+        self.mu_ = np.transpose(np.array(arr))
         # calculate cov matrix
-        xi_twos_minus_mu = X[y == 2] - self.mu_[:, 2]
-        xi_ones_minus_mu = X[y == 1] - self.mu_[:, 1]
-        xi_zeros_minus_mu = X[y == 0] - self.mu_[:, 0]
-        self.cov_ = np.matmul(np.transpose(xi_twos_minus_mu), xi_twos_minus_mu)
-        self.cov_ += np.matmul(np.transpose(xi_ones_minus_mu), xi_ones_minus_mu)
-        self.cov_ += np.matmul(np.transpose(xi_zeros_minus_mu), xi_zeros_minus_mu)
-        self.cov_ /= y.size  # using the unbiased estimator
+        xi_minus_mu = []
+        for i, j in enumerate(self.classes_):
+            cov = X[y == i] - self.mu_[:, i]
+            xi_minus_mu.append(cov)
+        xi_minus_mu = np.array(xi_minus_mu, dtype=object)
+        self.cov_ = 0
+        for i in range(len(xi_minus_mu)):
+            self.cov_ += np.matmul(np.transpose(xi_minus_mu[i]), xi_minus_mu[i])
+        self.cov_ /= y.size
         # inverse cov matrix
         self._cov_inv = np.linalg.inv(self.cov_)
         # calculate pi
-        self.pi_ = -0.5 * np.diag(np.matmul(np.matmul(np.transpose(self.mu_), self._cov_inv), self.mu_))
+        mean = []
+        for i, j in enumerate(self.classes_):
+            mean.append(np.mean(y == i))
+        self.pi_ = np.array(mean)
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         """
@@ -78,8 +80,8 @@ class LDA(BaseEstimator):
             Predicted responses of given samples
         """
         X_cov_mu = np.matmul(np.transpose(self._cov_inv), self.mu_)
-        log_pi = np.log(self.classes_)
-        return np.argmax(np.matmul(X, X_cov_mu) + self.pi_ + log_pi, axis=1)
+        mu_covinv_mu = -0.5 * np.diag(np.matmul(np.matmul(np.transpose(self.mu_), self._cov_inv), self.mu_))
+        return np.argmax(np.matmul(X, X_cov_mu) + mu_covinv_mu + np.log(self.pi_), axis=1)
 
     def likelihood(self, X: np.ndarray) -> np.ndarray:
         """
@@ -94,13 +96,21 @@ class LDA(BaseEstimator):
             The likelihood for each sample under each of the classes
 
         """
-        return np.exp(self.log_likelihood(self, X))
+        if not self.fitted_:
+            raise ValueError("Estimator must first be fitted before calling `likelihood` function")
 
-    def log_likelihood(self, X: np.ndarray) -> np.ndarray:
-        d_half_log_two_pi = -0.5 * X.size * np.log(2 * np.pi)
-        log_cov = -0.5 * np.log(self.cov_)
-        X_minus_mu_inv_cov = -0.5 * np.matmul(np.matmul(X - self.mu_, self._cov_inv), X - self.mu_)
-        return np.log(self.classes_) + d_half_log_two_pi + log_cov + X_minus_mu_inv_cov
+        likelihoods = np.ndarray((X.shape[0], self.classes_.size))
+        # iterate through X
+        for i, x in enumerate(X):
+            # iterate through the amount of possible answers
+            for classes in range(self.classes_.size):
+                pdf = 1
+                # iterate through X columns
+                for column in range(X.shape[1]):
+                    pdf *= (1 / np.sqrt(2 * np.pi * self.cov_[classes][column])) * np.exp(
+                        -0.5 * ((x[column] - self.mu_[classes][column]) ** 2) / self.cov_[classes][column])
+                likelihoods[i][classes] = self.pi_[classes] * pdf
+        return likelihoods
 
     def _loss(self, X: np.ndarray, y: np.ndarray) -> float:
         """

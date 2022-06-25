@@ -44,8 +44,8 @@ def run_perceptron():
     as a function of the training iterations (x-axis).
     """
     losses = []
-    for n, f in [("Linearly Separable", "linearly_separable.npy"),
-                 ("Linearly Inseparable", "linearly_inseparable.npy")]:
+    for n, f in [("Linearly Separable", "linearly_separable.npy")]:
+                 # ("Linearly Inseparable", "linearly_inseparable.npy")]:
         # Load dataset
         X, y = load_dataset(f"../datasets/{f}")
         # array for keeping the loss values of each change of the perceptron algorithm
@@ -102,10 +102,6 @@ def compare_gaussian_classifiers():
         gnb = GaussianNaiveBayes()
         gnb.fit(X, y)
         gnb_predict = gnb.predict(X)
-        gnb_mu = np.array(gnb.mu_)
-        gnb_vars = np.array(gnb.vars_)
-        # Plot a figure with two suplots, showing the Gaussian Naive Bayes predictions on the left and LDA predictions
-        # on the right. Plot title should specify dataset used and subplot titles should specify algorithm and accuracy
         # Create subplots
         symbols = np.array(["cross", "circle"])
         fig = make_subplots(rows=1, cols=2,
@@ -117,43 +113,36 @@ def compare_gaussian_classifiers():
                             horizontal_spacing=0.05)
         fig.update_layout(title=n)
 
-        # Add traces for data-points setting symbols and colors
-        for i, y_pred in enumerate((gnb_predict, lda_predict)):
-            comp = [1 if y_pred[j] == y[j] else 0 for j in range(len(y_pred))]
+        # Add traces
+        for index, prediction in enumerate((gnb_predict, lda_predict)):
+            comp = [1 if prediction[i] == y[i] else 0 for i in range(len(prediction))]
             fig.add_traces([go.Scatter(x=X[:, 0], y=X[:, 1], mode="markers", showlegend=False,
-                                       marker=dict(color=y_pred,
-                                                   symbol=symbols[comp],
-                                                   line=dict(color="black", width=1)))],
-                           rows=(i // 2) + 1, cols=(i % 2) + 1)
-
+                                       marker=dict(color=prediction,symbol=symbols[comp],
+                                                   line=dict(color="black", width=1)))], rows=(index // 2) + 1, cols=(index % 2) + 1)
         # Add ellipses
         fig.add_traces([
-            get_ellipse(gnb_mu[:, 0], gnb_vars),
-            get_ellipse(gnb_mu[:, 1], gnb_vars),
-            get_ellipse(gnb_mu[:, 2], gnb_vars)
+            get_ellipse(gnb.mu_[0, :], np.diag(gnb.vars_[0, :])),
+            get_ellipse(gnb.mu_[1, :], np.diag(gnb.vars_[1, :])),
+            get_ellipse(gnb.mu_[2, :], np.diag(gnb.vars_[2, :]))
         ], rows=1, cols=1)
         fig.add_traces([
             get_ellipse(lda_mu[:, 0], lda_cov),
             get_ellipse(lda_mu[:, 1], lda_cov),
             get_ellipse(lda_mu[:, 2], lda_cov)
         ], rows=1, cols=2)
-        # Add `X`
-        fig.add_trace(go.Scatter(x=gnb_mu[0, :],
-                                 y=gnb_mu[1, :], mode="markers",
-                                 showlegend=False,
-                                 marker=dict(color="black", symbol="x",
-                                             line=dict(color="black", width=2),
-                                             size=20)), row=1, col=1)
+        # Add `X` sign to the center of the ellipse
+        fig.add_trace(go.Scatter(x=gnb.mu_[:, 0],
+                                 y=gnb.mu_[:, 1], mode="markers",
+                                 showlegend=False, marker=dict(color="black", symbol="x",
+                                             line=dict(color="black", width=2), size=20)), row=1, col=1)
         fig.add_trace(go.Scatter(x=lda_mu[0, :],
-                                 y=lda_mu[1, :], mode="markers",
-                                 showlegend=False,
+                                 y=lda_mu[1, :], mode="markers",showlegend=False,
                                  marker=dict(color="black", symbol="x",
-                                             line=dict(color="black", width=2),
-                                             size=20)), row=1, col=2)
+                                             line=dict(color="black", width=2), size=20)), row=1, col=2)
         fig.show()
 
 
 if __name__ == '__main__':
     np.random.seed(0)
-    # run_perceptron()
-    compare_gaussian_classifiers()
+    run_perceptron()
+    # compare_gaussian_classifiers()
